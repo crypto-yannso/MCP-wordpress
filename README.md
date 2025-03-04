@@ -238,4 +238,4 @@ curl -X POST "http://localhost:3000/api/wordpress/media?site_url=https://example
 
 ## License
 
-MIT
+MIT# Mise à jour le Mar  4 mar 2025 23:25:08 CET
