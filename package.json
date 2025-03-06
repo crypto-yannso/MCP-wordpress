@@ -6,11 +6,14 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "start:claude35": "ANTHROPIC_MODEL=claude-3-5-sonnet-20240620 node server.js",
+    "dev:claude35": "ANTHROPIC_MODEL=claude-3-5-sonnet-20240620 nodemon server.js",
     "test": "jest"
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "axios": "^1.6.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -19,8 +22,8 @@
     "helmet": "^7.1.0",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
-    "openai": "^4.20.1",
-    "node-nlp": "^4.27.0"
+    "node-nlp": "^4.27.0",
+    "openai": "^4.20.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",

@@ -1,6 +1,38 @@
 # WordPress MCP API Server
 
-A comprehensive server that can communicate with the WordPress REST API to perform all possible actions on a WordPress site. The server can process natural language instructions and convert them into WordPress API operations.
+A Claude MCP (Model-Calling-Protocol) compatible server that can communicate with the WordPress REST API to perform all possible actions on a WordPress site. The server processes natural language instructions and converts them into WordPress API operations.
+
+## MCP Integration
+
+This server follows Anthropic's Model-Calling-Protocol standard, providing a simple request/response interface:
+
+- **Endpoint**: `/api/mcp`
+- **Method**: POST
+- **Request Format**:
+```json
+{
+  "messages": [
+    {"role": "user", "content": "Your natural language request about WordPress"}
+  ]
+}
+```
+- **Response Format**:
+```json
+{
+  "success": true,
+  "response": {
+    "role": "assistant",
+    "content": "Response from the MCP with WordPress operation results"
+  }
+}
+```
+
+## AI Providers
+
+The server supports multiple AI providers:
+
+- **Anthropic Claude** (default): Using Claude 3.5 Sonnet for natural language understanding
+- **OpenAI**: Using GPT-4 as a fallback option
 
 ## Features
 
@@ -188,7 +220,20 @@ These parameters can be passed as query parameters or in the request body.
 
 ## Example Requests
 
-### Using the Natural Language API
+### Using the MCP Endpoint
+
+```bash
+# Using POST with JSON body (MCP standard format)
+curl -X POST "http://localhost:3000/api/mcp" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "Show me all published posts"}
+    ]
+  }'
+```
+
+### Using the Natural Language API (Legacy)
 
 ```bash
 # Using POST with JSON body

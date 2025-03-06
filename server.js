@@ -4,8 +4,26 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const multer = require('multer');
 const path = require('path');
+const dotenv = require('dotenv');
 const setupRoutes = require('./src/routes');
 const config = require('./config/config');
+
+// Charger les variables d'environnement depuis le fichier .env
+dotenv.config();
+console.log('Variables d\'environnement chargées depuis .env');
+
+// Vérifier les variables WordPress chargées
+console.log('Variables WordPress après chargement:', {
+  WP_URL: process.env.WP_URL,
+  WP_USERNAME: process.env.WP_USERNAME,
+  WP_APP_PASSWORD: process.env.WP_APP_PASSWORD ? 'DÉFINI' : 'NON DÉFINI'
+});
+
+// Afficher les informations sur le modèle IA configuré
+console.log('Configuration IA:');
+console.log('- Fournisseur:', process.env.AI_PROVIDER || config.ai.provider || 'anthropic');
+console.log('- Modèle Anthropic:', process.env.ANTHROPIC_MODEL || config.ai.anthropicModel || 'non configuré');
+console.log('- Modèle OpenAI:', process.env.OPENAI_MODEL || config.ai.openaiModel || 'non configuré');
 
 // Initialize Express app
 const app = express();
