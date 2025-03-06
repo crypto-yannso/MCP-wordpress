@@ -1,16 +1,34 @@
 const { NlpManager } = require('node-nlp');
 const { OpenAI } = require('openai');
+const Anthropic = require('@anthropic-ai/sdk');
 const config = require('../config/config');
 
 class NLPService {
   constructor() {
     this.manager = new NlpManager({ languages: ['en'], forceNER: true });
     this.openai = null;
+    this.anthropic = null;
     
-    if (config.ai.openaiApiKey) {
+    // Déterminer le fournisseur AI à utiliser
+    const aiProvider = config.ai.provider || 'openai';
+    console.log(`Configuration du fournisseur AI: ${aiProvider}`);
+    
+    if (aiProvider === 'openai' && config.ai.openaiApiKey) {
+      console.log('OpenAI API Key trouvée, initialisation d\'OpenAI');
       this.openai = new OpenAI({
         apiKey: config.ai.openaiApiKey
       });
+      console.log('OpenAI initialisé avec le modèle:', config.ai.openaiModel);
+    } else if (aiProvider === 'anthropic' && config.ai.anthropicApiKey) {
+      console.log('Anthropic API Key trouvée, initialisation d\'Anthropic');
+      this.anthropic = new Anthropic({
+        apiKey: config.ai.anthropicApiKey,
+      });
+      console.log('Anthropic initialisé avec le modèle:', config.ai.anthropicModel);
+      console.log('Vérification de la clé API Anthropic:', config.ai.anthropicApiKey ? `${config.ai.anthropicApiKey.substring(0, 10)}...` : 'Non définie');
+    } else {
+      console.warn(`⚠️ Aucune clé API pour ${aiProvider} trouvée. Le traitement avancé du langage naturel ne sera pas disponible.`);
+      console.warn(`Définissez ${aiProvider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY'} dans votre fichier .env pour activer l'API.`);
     }
     
     this.setupNLP();
@@ -246,33 +264,30 @@ class NLPService {
 
   async processNaturalLanguage(text, siteConfig) {
     try {
-      // First try with the NLP manager
-      const result = await this.manager.process('en', text);
-      
-      // If confidence is high enough, return the parsed intent
-      if (result.intent && result.score > 0.7) {
+      // Si la configuration AI est disponible, utiliser cette méthode
+      if (config.ai.provider === 'openai' && this.openai) {
+        console.log('Traitement avec OpenAI');
+        return await this.processWithOpenAI(text, siteConfig);
+      } else if (config.ai.provider === 'anthropic' && this.anthropic) {
+        console.log('Traitement avec Anthropic');
+        return await this.processWithAnthropic(text, siteConfig);
+      } else {
+        console.log('Traitement avec NLP local');
+        // Utiliser le traitement local (node-nlp)
+        const result = await this.manager.process('en', text);
+        
+        // Extraire l'intention et les entités
         const intent = this.parseIntent(result.intent);
         const entities = this.extractEntities(result.entities);
         
         return {
           success: true,
-          intent: intent,
-          entities: entities,
-          siteConfig: siteConfig
+          intent,
+          entities,
+          confidence: result.score,
+          siteConfig
         };
       }
-      
-      // If NLP manager fails, try with OpenAI
-      if (this.openai) {
-        return await this.processWithOpenAI(text, siteConfig);
-      }
-      
-      // If all else fails
-      return {
-        success: false,
-        error: 'Unable to understand the request',
-        nlpResult: result
-      };
     } catch (error) {
       console.error('NLP processing error:', error);
       return {
@@ -294,15 +309,17 @@ class NLPService {
         "data": {} // For POST/PUT requests: Request body
       }
       
+      Important: When creating or updating posts and pages, ALWAYS set the status to "publish" in the data object unless specifically requested otherwise. All content should be published immediately, not saved as drafts.
+      
       Examples:
       1. Input: "Show me all the posts"
          Output: {"method": "GET", "endpoint": "posts", "params": {}}
       
       2. Input: "Create a new post called 'Hello World' with content 'This is my first post'"
-         Output: {"method": "POST", "endpoint": "posts", "data": {"title": "Hello World", "content": "This is my first post"}}
+         Output: {"method": "POST", "endpoint": "posts", "data": {"title": "Hello World", "content": "This is my first post", "status": "publish"}}
       
       3. Input: "Update post 123 to set the title to 'New Title'"
-         Output: {"method": "PUT", "endpoint": "posts/123", "data": {"title": "New Title"}}
+         Output: {"method": "PUT", "endpoint": "posts/123", "data": {"title": "New Title", "status": "publish"}}
       
       4. Input: "Delete the post with ID 456"
          Output: {"method": "DELETE", "endpoint": "posts/456"}
@@ -324,16 +341,121 @@ class NLPService {
       const content = response.choices[0].message.content;
       const parsed = JSON.parse(content);
       
+      // Ajouter le statut "publish" pour les articles et pages si ce n'est pas déjà défini
+      const data = parsed.data || {};
+      
+      // Si c'est une création ou modification d'article/page, définir le statut sur "publish"
+      if ((parsed.method === 'POST' || parsed.method === 'PUT') && 
+          (parsed.endpoint === 'posts' || parsed.endpoint.startsWith('posts/') || 
+           parsed.endpoint === 'pages' || parsed.endpoint.startsWith('pages/'))) {
+        
+        // Ne pas écraser le statut s'il est déjà défini
+        if (!data.status) {
+          data.status = 'publish';
+          console.log('Statut automatiquement défini sur "publish" pour:', parsed.endpoint);
+        }
+      }
+      
       return {
         success: true,
         method: parsed.method,
         endpoint: parsed.endpoint,
         params: parsed.params || {},
-        data: parsed.data || {},
+        data: data,
         siteConfig: siteConfig
       };
     } catch (error) {
       console.error('OpenAI processing error:', error);
+      return {
+        success: false,
+        error: 'AI processing failed: ' + error.message
+      };
+    }
+  }
+  
+  async processWithAnthropic(text, siteConfig) {
+    try {
+      const system = `You are a WordPress API assistant. Your task is to convert natural language requests into API operations.
+      
+      Output a JSON object with the following structure:
+      {
+        "method": "GET|POST|PUT|DELETE", // The HTTP method to use
+        "endpoint": "string", // The WordPress API endpoint (e.g., "posts", "pages/123", etc.)
+        "params": {}, // For GET requests: URL parameters
+        "data": {} // For POST/PUT requests: Request body
+      }
+      
+      Important: When creating or updating posts and pages, ALWAYS set the status to "publish" in the data object unless specifically requested otherwise. All content should be published immediately, not saved as drafts.
+      
+      Examples:
+      1. Input: "Show me all the posts"
+         Output: {"method": "GET", "endpoint": "posts", "params": {}}
+      
+      2. Input: "Create a new post called 'Hello World' with content 'This is my first post'"
+         Output: {"method": "POST", "endpoint": "posts", "data": {"title": "Hello World", "content": "This is my first post", "status": "publish"}}
+      
+      3. Input: "Update post 123 to set the title to 'New Title'"
+         Output: {"method": "PUT", "endpoint": "posts/123", "data": {"title": "New Title", "status": "publish"}}
+      
+      4. Input: "Delete the post with ID 456"
+         Output: {"method": "DELETE", "endpoint": "posts/456"}
+      
+      Supported resources: posts, pages, media, users, categories, tags, comments, menus, plugins, settings
+      
+      Only respond with valid JSON. Do not include any explanations or additional text.`;
+
+      console.log('Envoi de la requête à Anthropic avec la clé API:', config.ai.anthropicApiKey ? `${config.ai.anthropicApiKey.substring(0, 10)}...` : 'Non définie');
+      
+      const response = await this.anthropic.messages.create({
+        model: config.ai.anthropicModel,
+        system: system,
+        messages: [
+          { role: 'user', content: text }
+        ],
+        temperature: 0.1,
+        max_tokens: 1000
+      });
+
+      // Extraire la réponse JSON du texte
+      const content = response.content[0].text;
+      let parsed;
+      
+      try {
+        // Anthropic peut parfois renvoyer un texte en plus du JSON, nous devons l'extraire
+        const jsonMatch = content.match(/({[\s\S]*})/);
+        const jsonStr = jsonMatch ? jsonMatch[0] : content;
+        parsed = JSON.parse(jsonStr);
+      } catch (e) {
+        console.error('Erreur lors du parsing de la réponse JSON Anthropic:', e);
+        console.log('Réponse brute:', content);
+        throw new Error('Impossible de parser la réponse JSON de Anthropic: ' + e.message);
+      }
+      
+      // Ajouter le statut "publish" pour les articles et pages si ce n'est pas déjà défini
+      const data = parsed.data || {};
+      
+      // Si c'est une création ou modification d'article/page, définir le statut sur "publish"
+      if ((parsed.method === 'POST' || parsed.method === 'PUT') && 
+          (parsed.endpoint === 'posts' || parsed.endpoint.startsWith('posts/') || 
+           parsed.endpoint === 'pages' || parsed.endpoint.startsWith('pages/'))) {
+        
+        // Ne pas écraser le statut s'il est déjà défini
+        if (!data.status) {
+          data.status = 'publish';
+          console.log('Statut automatiquement défini sur "publish" pour:', parsed.endpoint);
+        }
+      }
+      
+      return {
+        success: true,
+        method: parsed.method,
+        endpoint: parsed.endpoint,
+        params: parsed.params || {},
+        data: data,
+        siteConfig: siteConfig
+      };
+    } catch (error) {
+      console.error('Anthropic processing error:', error);
       return {
         success: false,
         error: 'AI processing failed: ' + error.message
