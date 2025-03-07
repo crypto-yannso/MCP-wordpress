@@ -1,13 +1,28 @@
 const express = require('express');
 const WordPressAPI = require('./wp-api');
 const nlpController = require('./nlp-controller');
+const agentController = require('./agent-controller');
 
 function setupRoutes(app) {
+  console.log('Configuration des routes...');
+  
   const router = express.Router();
   
   // Natural language processing endpoint
   router.post('/nlp', (req, res) => nlpController.processRequest(req, res));
   router.get('/nlp', (req, res) => nlpController.processRequest(req, res));
+  
+  // MCP endpoint (secure with pre-configured authentication)
+  console.log('Configuration de la route MCP: /api/mcp');
+  const mcpRouter = express.Router();
+  mcpRouter.post('/', (req, res) => {
+    console.log('Route MCP appelée');
+    return agentController.processRequest(req, res);
+  });
+  mcpRouter.head('/', (req, res) => {
+    console.log('Route MCP HEAD appelée');
+    res.sendStatus(200);
+  });
   
   // Authentication middleware
   const authMiddleware = async (req, res, next) => {
@@ -667,6 +682,23 @@ function setupRoutes(app) {
   });
 
   app.use('/api/wordpress', router);
+  
+  // For the MCP endpoint, we don't need the authentication middleware
+  app.use('/api/mcp', mcpRouter);
+  
+  // Pour la rétrocompatibilité, rediriger l'ancien endpoint /api/agent/nlp vers le nouveau /api/mcp
+  const legacyAgentRouter = express.Router();
+  legacyAgentRouter.post('/nlp', (req, res) => {
+    console.log('Ancien chemin /api/agent/nlp appelé - redirection vers MCP');
+    return agentController.processRequest(req, res);
+  });
+  legacyAgentRouter.head('/nlp', (req, res) => {
+    console.log('Route agent HEAD appelée via l\'ancien chemin');
+    res.sendStatus(200);
+  });
+  app.use('/api/agent', legacyAgentRouter);
+  
+  console.log('Configuration des routes terminée');
 }
 
 module.exports = setupRoutes;

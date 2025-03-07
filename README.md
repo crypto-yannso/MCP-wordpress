@@ -284,3 +284,22 @@ curl -X POST "http://localhost:3000/api/wordpress/media?site_url=https://example
 ## License
 
 MIT# Mise à jour le Mar  4 mar 2025 23:25:08 CET
+
+
+EX request :
+
+curl -X POST "http://localhost:3000/api/mcp" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"messages\": [
+      {
+        \"role\": \"user\",
+        \"content\": \"Fais une requête GET sur /wp-json/wp/v2/pages/38 et montre-moi le contenu brut de la page\"
+      }
+    ],
+    \"wordpress_credentials\": {
+      \"site_url\": \"https://jess-jeff.fr\",
+      \"username\": \"eyann\",
+      \"app_password\": \"w9Mf 8iLp 5LI4 fKaX 36MP Bq9y\"
+    }
+  }"
